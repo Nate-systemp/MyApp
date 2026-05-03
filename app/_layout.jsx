@@ -22,7 +22,7 @@ function AuthGate({ children }) {
     } else if (session && inAuth) {
       router.replace('/(tabs)');
     }
-  }, [session, loading, segments]);
+  }, [session, loading, segments, router]);
 
   return children;
 }
@@ -38,6 +38,10 @@ export default function RootLayout() {
             <Stack.Screen
               name="memory/[id]"
               options={{ animation: 'fade', presentation: 'fullScreenModal' }}
+            />
+            <Stack.Screen
+              name="album/[id]"
+              options={{ animation: 'fade', presentation: 'card' }}
             />
           </Stack>
         </AuthGate>

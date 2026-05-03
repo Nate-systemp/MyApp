@@ -1,11 +1,7 @@
 import { Tabs } from 'expo-router';
-import { View, Text, StyleSheet } from 'react-native';
-import { C } from '../../constants/Yin';
 
 /**
- * Tab layout — single "Home" tab with custom styled tab bar.
- * The tab bar is hidden because the app uses a single main screen
- * with a FAB for upload and navigation for details.
+ * Tab layout — Clean single tab design for the redesigned home screen
  */
 export default function TabLayout() {
   return (
@@ -15,7 +11,13 @@ export default function TabLayout() {
         tabBarStyle: { display: 'none' },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
+      <Tabs.Screen 
+        name="index" 
+        options={{ 
+          title: 'Home',
+          tabBarStyle: { display: 'none' }
+        }} 
+      />
     </Tabs>
   );
 }

@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Dimensions, Alert, StatusBar, Image
+  View, Text, Pressable, StyleSheet, Dimensions, Alert, StatusBar, Image, TextInput
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
+import * as Haptics from 'expo-haptics';
 import { supabase } from '../../supabase';
 import { C, F, S, shadow } from '../../constants/Yin';
 
@@ -17,14 +18,43 @@ export default function MemoryDetail() {
   const insets = useSafeAreaInsets();
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState('');
   const viewRef = useRef();
 
-  let item = {};
-  try { 
-    item = JSON.parse(itemStr); 
-  } catch { 
-    item = { id, photo_url: '', caption: '', created_at: '' }; 
-  }
+  const item = useMemo(() => {
+    try {
+      return JSON.parse(itemStr);
+    } catch {
+      return { id, photo_url: '', caption: '', created_at: '' };
+    }
+  }, [id, itemStr]);
+  const [currentItem, setCurrentItem] = useState(item);
+
+  useEffect(() => {
+    setCurrentItem(item);
+    setCaptionDraft(item.caption ?? '');
+  }, [item]);
+
+  const persistUpdate = async (changes) => {
+    if (!currentItem?.id) return;
+    setUpdating(true);
+    try {
+      const { data, error } = await supabase
+        .from('memories')
+        .update(changes)
+        .eq('id', currentItem.id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      setCurrentItem((prev) => ({ ...prev, ...data, ...changes }));
+    } catch (e) {
+      Alert.alert('Update failed', e.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const handleDelete = () => {
     Alert.alert('Delete Memory', 'Remove this memory for both of you?', [
@@ -34,12 +64,12 @@ export default function MemoryDetail() {
         onPress: async () => {
           setDeleting(true);
           try {
-            const pathParts = item.photo_url.split('/public/photos/');
+            const pathParts = currentItem.photo_url.split('/public/photos/');
             const filePath = pathParts[1]?.split('?')[0];
             if (filePath) {
               await supabase.storage.from('photos').remove([filePath]);
             }
-            const { error } = await supabase.from('memories').delete().eq('id', item.id);
+            const { error } = await supabase.from('memories').delete().eq('id', currentItem.id);
             if (error) throw error;
             router.back();
           } catch (e) {
@@ -76,8 +106,8 @@ export default function MemoryDetail() {
     }
   };
 
-  const dateStr = item.created_at
-    ? new Date(item.created_at).toLocaleDateString('en-US', {
+  const dateStr = currentItem.created_at
+    ? new Date(currentItem.created_at).toLocaleDateString('en-US', {
         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
       })
     : '';
@@ -96,7 +126,7 @@ export default function MemoryDetail() {
           {/* The Image Area */}
           <View style={styles.imageArea}>
             <Image
-              source={{ uri: item.photo_url }}
+              source={{ uri: currentItem.photo_url }}
               style={styles.image}
               resizeMode="contain"
             />
@@ -104,9 +134,21 @@ export default function MemoryDetail() {
 
           {/* The Footer (Caption & Date) */}
           <View style={styles.polaroidFooter}>
-            <Text style={styles.polaroidCaption}>
-              {item.caption || "No caption"}
-            </Text>
+            {editing ? (
+              <TextInput
+                value={captionDraft}
+                onChangeText={setCaptionDraft}
+                style={styles.captionInput}
+                placeholder="Write a caption"
+                placeholderTextColor={C.label4}
+                multiline
+                autoFocus
+              />
+            ) : (
+              <Text style={styles.polaroidCaption}>
+                {currentItem.caption || 'No caption'}
+              </Text>
+            )}
             <Text style={styles.polaroidDate}>{dateStr}</Text>
           </View>
         </View>
@@ -114,7 +156,7 @@ export default function MemoryDetail() {
 
       {/* ── TOP NAV BAR ── */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <Pressable style={styles.navBtn} onPress={() => router.back()}>
+        <Pressable style={({ pressed }) => [styles.navBtn, pressed && styles.navBtnPressed]} onPress={() => router.back()}>
           <View style={styles.backCircle}>
              <Text style={styles.backIcon}>‹</Text>
           </View>
@@ -131,6 +173,42 @@ export default function MemoryDetail() {
                <View style={styles.saveBar} />
             </View>
           </Pressable>
+
+          <Pressable
+            style={[styles.likeBtn, currentItem.liked && styles.likeBtnActive]}
+            disabled={updating}
+            onPress={async () => {
+              Haptics.selectionAsync();
+              await persistUpdate({ liked: !currentItem.liked });
+            }}
+          >
+            <Text style={[styles.likeBtnText, currentItem.liked && styles.likeBtnTextActive]}>
+              {currentItem.liked ? 'Liked' : 'Like'}
+            </Text>
+          </Pressable>
+
+          {editing ? (
+            <Pressable
+              style={[styles.editBtn, updating && { opacity: 0.5 }]}
+              disabled={updating}
+              onPress={async () => {
+                await persistUpdate({ caption: captionDraft.trim() });
+                setEditing(false);
+              }}
+            >
+              <Text style={styles.editBtnText}>Save</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={styles.editBtn}
+              onPress={() => {
+                setCaptionDraft(currentItem.caption ?? '');
+                setEditing(true);
+              }}
+            >
+              <Text style={styles.editBtnText}>Edit</Text>
+            </Pressable>
+          )}
 
           <Pressable style={styles.deleteBtn} onPress={handleDelete} disabled={deleting}>
             <Text style={styles.deleteBtnText}>Delete</Text>
@@ -189,6 +267,15 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  captionInput: {
+    width: '100%',
+    textAlign: 'center',
+    color: C.label,
+    fontSize: F.lg,
+    fontWeight: F.semibold,
+    minHeight: 32,
+    paddingHorizontal: 8,
+  },
 
   /* nav */
   topBar: {
@@ -202,6 +289,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   backIcon: { fontSize: 24, color: C.label, lineHeight: 28, marginRight: 2 },
+  navBtnPressed: { opacity: 0.7 },
   
   topRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   saveBtn: {
@@ -230,4 +318,32 @@ const styles = StyleSheet.create({
     borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
   },
   deleteBtnText: { color: C.error, fontSize: F.sm, fontWeight: F.bold },
+  likeBtn: {
+    backgroundColor: C.bg,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  likeBtnActive: {
+    backgroundColor: C.greenTint,
+  },
+  likeBtnText: {
+    color: C.label2,
+    fontSize: F.sm,
+    fontWeight: F.semibold,
+  },
+  likeBtnTextActive: {
+    color: C.greenDark,
+  },
+  editBtn: {
+    backgroundColor: 'rgba(11,110,79,0.1)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  editBtnText: {
+    color: C.green,
+    fontSize: F.sm,
+    fontWeight: F.bold,
+  },
 });

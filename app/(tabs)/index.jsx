@@ -1,59 +1,103 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, StatusBar,
+  View, Text, Pressable, StyleSheet, StatusBar, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import Animated, {
-  useSharedValue, useAnimatedStyle, withTiming, withDelay,
-  withRepeat, withSequence, withSpring, Easing,
+  useSharedValue, useAnimatedStyle, withTiming, withSpring, withDelay, Easing,
 } from 'react-native-reanimated';
 import { supabase } from '../../supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import YinMascot from '../../components/YinMascot';
-import MemoryCard from '../../components/MemoryCard';
-import MemoryGrid from '../../components/MemoryGrid';
+import AlbumGrid from '../../components/AlbumGrid';
 import UploadSheet from '../../components/UploadSheet';
-import { C, F, S, shadow } from '../../constants/Yin';
+import ProfileModal from '../../components/ProfileModal';
+import { C, F, R, S, shadow } from '../../constants/Yin';
 
 const AView = Animated.createAnimatedComponent(View);
 const APressable = Animated.createAnimatedComponent(Pressable);
 
 export default function HomeScreen() {
-  const { user, signOut } = useAuth();
+  useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef(null);
+  const [profileVisible, setProfileVisible] = useState(false);
+  const [groupMode] = useState('month');
+  const [contentFilter, setContentFilter] = useState('all');
+  const [openingAlbum, setOpeningAlbum] = useState(false);
 
   const [memories, setMemories] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
 
-  /* entrance */
   const op = useSharedValue(0);
+  const heroY = useSharedValue(18);
+  const statsY = useSharedValue(24);
+  const filtersY = useSharedValue(30);
+  const latestY = useSharedValue(36);
+  const heroOp = useSharedValue(0);
+  const statsOp = useSharedValue(0);
+  const filtersOp = useSharedValue(0);
+  const latestOp = useSharedValue(0);
+  const fabOpacity = useSharedValue(1);
+  const fabTranslateY = useSharedValue(0);
+  const lastScrollY = useRef(0);
   useEffect(() => {
     op.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) });
+    heroY.value = withDelay(40, withSpring(0, { damping: 14, stiffness: 120 }));
+    statsY.value = withDelay(110, withSpring(0, { damping: 14, stiffness: 120 }));
+    filtersY.value = withDelay(170, withSpring(0, { damping: 14, stiffness: 120 }));
+    latestY.value = withDelay(230, withSpring(0, { damping: 14, stiffness: 120 }));
+    heroOp.value = withDelay(40, withTiming(1, { duration: 380 }));
+    statsOp.value = withDelay(110, withTiming(1, { duration: 380 }));
+    filtersOp.value = withDelay(170, withTiming(1, { duration: 380 }));
+    latestOp.value = withDelay(230, withTiming(1, { duration: 420 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot mount fade-in
   }, []);
   const aStyle = useAnimatedStyle(() => ({ opacity: op.value }));
+  const heroAnimStyle = useAnimatedStyle(() => ({
+    opacity: heroOp.value,
+    transform: [{ translateY: heroY.value }],
+  }));
+  const statsAnimStyle = useAnimatedStyle(() => ({
+    opacity: statsOp.value,
+    transform: [{ translateY: statsY.value }],
+  }));
+  const filtersAnimStyle = useAnimatedStyle(() => ({
+    opacity: filtersOp.value,
+    transform: [{ translateY: filtersY.value }],
+  }));
+  const latestAnimStyle = useAnimatedStyle(() => ({
+    opacity: latestOp.value,
+    transform: [{ translateY: latestY.value }],
+  }));
+  const latestCardScale = useSharedValue(1);
+  const latestCardOpenY = useSharedValue(0);
+  const latestCardOpenStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: latestCardScale.value }, { translateY: latestCardOpenY.value }],
+  }));
 
-  /* fab pulse */
   const fabSc = useSharedValue(1);
-  const fabStyle = useAnimatedStyle(() => ({ transform: [{ scale: fabSc.value }] }));
+  const fabStyle = useAnimatedStyle(() => ({
+    opacity: fabOpacity.value,
+    transform: [{ scale: fabSc.value }, { translateY: fabTranslateY.value }],
+  }));
 
-  /* data */
   const fetchMemories = useCallback(async () => {
     const { data, error } = await supabase
       .from('memories').select('*').order('created_at', { ascending: false });
     if (!error && data) setMemories(data);
   }, []);
 
+
+
   useEffect(() => {
     fetchMemories();
 
-    // ── REALTIME SUBSCRIPTION ──
     const channel = supabase
       .channel('memories_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'memories' }, () => {
-        fetchMemories(); // Refresh whenever anything changes
+        fetchMemories();
       })
       .subscribe();
 
@@ -62,63 +106,189 @@ export default function HomeScreen() {
     };
   }, [fetchMemories]);
 
-  const firstName = user?.email?.split('@')[0] ?? 'there';
-  const featured = memories[0];
-  const gridMemories = memories.slice(1);
+  const firstName = 'ADI';
+  const favoritesCount = memories.filter((item) => item.liked).length;
+
+  const filteredMemories = useMemo(() => (
+    contentFilter === 'favorites' ? memories.filter((item) => item.liked) : memories
+  ), [contentFilter, memories]);
+
+  const latestMemory = filteredMemories[0] ?? null;
 
   const openMemory = (item) =>
     router.push({ pathname: '/memory/[id]', params: { id: item.id, item: JSON.stringify(item) } });
 
-  const toggleLike = (item) =>
-    setMemories(prev => prev.map(m => m.id === item.id ? { ...m, liked: !m.liked } : m));
+  const openAlbum = (album) =>
+    router.push({
+      pathname: '/album/[id]',
+      params: { id: album.id, album: JSON.stringify(album), mode: groupMode },
+    });
+
+  const handleOpenLatestAlbum = () => {
+    if (!albums[0] || openingAlbum) return;
+    setOpeningAlbum(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    latestCardScale.value = withTiming(1.05, { duration: 160, easing: Easing.out(Easing.cubic) });
+    latestCardOpenY.value = withTiming(-8, { duration: 160, easing: Easing.out(Easing.cubic) });
+    setTimeout(() => {
+      openAlbum(albums[0]);
+      latestCardScale.value = 1;
+      latestCardOpenY.value = 0;
+      setOpeningAlbum(false);
+    }, 170);
+  };
+
+  const albums = useMemo(() => {
+    const grouped = filteredMemories.reduce((acc, memory) => {
+      const rawDate = memory.created_at ? new Date(memory.created_at) : new Date();
+      const validDate = Number.isNaN(rawDate.getTime()) ? new Date() : rawDate;
+
+      let key;
+      let name;
+      if (groupMode === 'week') {
+        const day = validDate.getDay();
+        const mondayOffset = day === 0 ? -6 : 1 - day;
+        const weekStart = new Date(validDate);
+        weekStart.setHours(0, 0, 0, 0);
+        weekStart.setDate(validDate.getDate() + mondayOffset);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        key = weekStart.toISOString().slice(0, 10);
+        const startText = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endText = weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        name = `${startText} - ${endText}`;
+      } else {
+        const year = validDate.getFullYear();
+        const month = String(validDate.getMonth() + 1).padStart(2, '0');
+        key = `${year}-${month}`;
+        name = validDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      }
+
+      if (!acc[key]) {
+        acc[key] = { id: key, name, count: 0, memories: [] };
+      }
+      acc[key].memories.push(memory);
+      acc[key].count += 1;
+      return acc;
+    }, {});
+
+    return Object.values(grouped).sort((a, b) => b.id.localeCompare(a.id));
+  }, [filteredMemories, groupMode]);
+
+  const handleGridScroll = (event) => {
+    const y = event.nativeEvent.contentOffset.y;
+    const goingDown = y > lastScrollY.current + 8;
+    const goingUp = y < lastScrollY.current - 8;
+    if (goingDown && y > 80) {
+      fabOpacity.value = withTiming(0, { duration: 160 });
+      fabTranslateY.value = withTiming(24, { duration: 160 });
+    } else if (goingUp) {
+      fabOpacity.value = withTiming(1, { duration: 200 });
+      fabTranslateY.value = withTiming(0, { duration: 200 });
+    }
+    lastScrollY.current = y;
+  };
+
+
 
   const ListHeader = (
     <AView style={aStyle}>
-      {/* ── Nav bar ── */}
-      <View style={[styles.navBar, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.navLeft}>
-          <Text style={styles.navTitle}>Yin</Text>
-          <Text style={styles.navSub}>{memories.length} {memories.length === 1 ? 'memory' : 'memories'}</Text>
-        </View>
-        <View style={styles.navRight}>
-          <YinMascot size={32} />
-          <Pressable onPress={signOut} style={styles.avatarBtn}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <View style={styles.topRow}>
+          <Text style={styles.brandTitle}>Yin</Text>
+          <Pressable
+            onPress={() => setProfileVisible(true)}
+            style={({ pressed }) => [styles.profileBtn, pressed && styles.profileBtnPressed]}
+            hitSlop={10}
+          >
             <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>{firstName[0]?.toUpperCase()}</Text>
+              <Text style={styles.avatarText}>
+                {(firstName[0] ?? '?').toUpperCase()}
+              </Text>
             </View>
           </Pressable>
         </View>
-      </View>
 
-      {/* ── Greeting ── */}
-      <View style={styles.greetRow}>
-        <Text style={styles.greetText}>Hello, {firstName}</Text>
-      </View>
-
-      {/* ── Divider ── */}
-      <View style={styles.divider} />
-
-      {/* ── Featured ── */}
-      {featured && (
-        <>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>LATEST</Text>
+        <AView style={[styles.heroBlock, heroAnimStyle]}>
+          <View style={styles.heroTextBlock}>
+            <Text style={styles.welcomeText}>I lawb u,</Text>
+            <Text style={styles.userName}>{firstName}</Text>
+            <View style={styles.captureRow}>
+              <Text style={styles.captureText}>Capture life, keep memories</Text>
+              <View style={styles.pinkHeart} />
+            </View>
           </View>
-          <MemoryCard
-            item={featured} featured
-            onPress={() => openMemory(featured)}
-            onLike={() => toggleLike(featured)}
-          />
-        </>
-      )}
+          <View style={styles.leafWrap}>
+            <View style={styles.leafLarge} />
+            <View style={styles.leafSmall} />
+            <View style={styles.leafDot} />
+          </View>
+        </AView>
 
-      {/* ── Grid label ── */}
-      {gridMemories.length > 0 && (
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>ALL MEMORIES</Text>
-          <Text style={styles.sectionCount}>{gridMemories.length}</Text>
-        </View>
-      )}
+        <AView style={[styles.statsRow, statsAnimStyle]}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>MEMORIES</Text>
+            <Text style={styles.statValue}>{memories.length}</Text>
+            <Text style={styles.statHint}>Keep capturing</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>FAVORITES</Text>
+            <Text style={styles.statValue}>{favoritesCount}</Text>
+            <Text style={styles.statHint}>Your favorites</Text>
+          </View>
+        </AView>
+
+        <AView style={[styles.filterTabs, filtersAnimStyle]}>
+          <Pressable
+            style={[styles.filterTabBtn, contentFilter === 'all' && styles.filterTabBtnActive]}
+            onPress={() => setContentFilter('all')}
+            android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+          >
+            <Text style={[styles.filterTabText, contentFilter === 'all' && styles.filterTabTextActive]}>All</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.filterTabBtn, contentFilter === 'favorites' && styles.filterTabBtnActive]}
+            onPress={() => setContentFilter('favorites')}
+            android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+          >
+            <Text style={[styles.filterTabText, contentFilter === 'favorites' && styles.filterTabTextActive]}>Favorites</Text>
+          </Pressable>
+        </AView>
+
+        <AView style={[styles.latestCard, latestAnimStyle, latestCardOpenStyle]}>
+          <View style={styles.latestHeaderRow}>
+            <View>
+              <Text style={styles.latestTitle}>Latest Memory</Text>
+              <Text style={styles.latestSubtitle}>your most recent capture</Text>
+            </View>
+            <Pressable
+              disabled={openingAlbum}
+              onPress={handleOpenLatestAlbum}
+              style={({ pressed }) => [
+                styles.viewAllBtn,
+                pressed && styles.viewAllBtnPressed,
+                openingAlbum && styles.viewAllBtnDisabled,
+              ]}
+            >
+              <Text style={styles.viewAllText}>open latest album {'>'}</Text>
+            </Pressable>
+          </View>
+          <Pressable
+            style={({ pressed }) => [styles.latestPreview, pressed && styles.latestPreviewPressed]}
+            onPress={() => {
+              if (latestMemory) openMemory(latestMemory);
+            }}
+          >
+            {latestMemory?.photo_url ? (
+              <Image source={{ uri: latestMemory.photo_url }} style={styles.latestImage} />
+            ) : (
+              <View style={styles.latestPlaceholder}>
+                <Text style={styles.latestPlaceholderText}>No photo yet</Text>
+              </View>
+            )}
+          </Pressable>
+        </AView>
+      </View>
     </AView>
   );
 
@@ -126,24 +296,39 @@ export default function HomeScreen() {
     <View style={styles.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      <MemoryGrid
-        memories={gridMemories}
-        onOpen={openMemory}
-        onLike={toggleLike}
+      <AlbumGrid
+        albums={albums}
+        onAlbumPress={openAlbum}
+        onMemoryPress={(memory) => {
+          if (memory) openMemory(memory);
+        }}
+        onScroll={handleGridScroll}
         ListHeader={ListHeader}
       />
 
-      {/* FAB */}
       <APressable
         style={[styles.fab, { bottom: insets.bottom + 24 }, fabStyle]}
-        onPress={() => sheetRef.current?.expand()}
-        onPressIn={() => { fabSc.value = withSpring(0.92, { damping: 12 }); }}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          sheetRef.current?.expand();
+        }}
+        onPressIn={() => {
+          Haptics.selectionAsync();
+          fabSc.value = withSpring(0.92, { damping: 12 });
+        }}
         onPressOut={() => { fabSc.value = withSpring(1, { damping: 10 }); }}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <View style={styles.fabPlus}>
+          <Text style={styles.fabPlusText}>+</Text>
+        </View>
+        <Text style={styles.fabLabel}>New Memory</Text>
       </APressable>
 
-      <UploadSheet ref={sheetRef} onUploaded={fetchMemories} />
+      <UploadSheet ref={sheetRef} onUploaded={() => { fetchMemories(); }} />
+      <ProfileModal 
+        visible={profileVisible} 
+        onClose={() => setProfileVisible(false)} 
+      />
     </View>
   );
 }
@@ -151,56 +336,266 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
 
-  /* nav */
-  navBar: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'flex-end', paddingHorizontal: S.lg, paddingBottom: S.sm,
+  header: {
+    paddingHorizontal: 0,
+    paddingBottom: S.lg,
   },
-  navLeft: {},
-  navTitle: {
-    fontSize: 34, fontWeight: F.black, color: C.label,
-    letterSpacing: -1.2, lineHeight: 36,
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: S.md,
   },
-  navSub: { fontSize: F.xs, fontWeight: F.medium, color: C.label4, marginTop: 1 },
-  navRight: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 4 },
-  avatarBtn: {},
+  brandTitle: {
+    fontSize: F.xxl,
+    fontWeight: F.black,
+    color: C.label,
+    letterSpacing: -0.4,
+  },
+  profileBtn: {
+    padding: 0,
+  },
+  profileBtnPressed: {
+    opacity: 0.75,
+  },
   avatarCircle: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: C.green,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.sm,
   },
-  avatarText: { color: '#fff', fontSize: F.sm, fontWeight: F.bold },
-
-  /* greeting */
-  greetRow: { paddingHorizontal: S.lg, paddingVertical: S.sm },
-  greetText: {
-    fontSize: F.lg, fontWeight: F.medium, color: C.label2, letterSpacing: -0.2,
+  avatarText: {
+    color: '#fff',
+    fontSize: F.lg,
+    fontWeight: F.bold,
   },
-
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: C.sep, marginHorizontal: S.lg, marginBottom: S.md },
-
-  /* section labels */
-  sectionHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: S.lg, marginBottom: S.sm,
+  heroBlock: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: S.md,
   },
-  sectionTitle: {
-    fontSize: F.xs, fontWeight: F.heavy, color: C.label4,
-    letterSpacing: 1.2,
+  heroTextBlock: {
+    gap: 2,
+    flex: 1,
   },
-  sectionCount: {
-    fontSize: F.xs, fontWeight: F.bold, color: C.green,
-    backgroundColor: C.greenTint, paddingHorizontal: 8, paddingVertical: 2,
-    borderRadius: 10,
+  welcomeText: {
+    fontSize: F.sm,
+    fontWeight: F.semibold,
+    color: C.label3,
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
   },
-
-  /* FAB */
+  userName: {
+    fontSize: 34,
+    fontWeight: F.black,
+    color: C.label,
+    letterSpacing: -1,
+  },
+  captureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  captureText: {
+    fontSize: F.sm,
+    color: C.label3,
+  },
+  pinkHeart: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF8FB1',
+  },
+  leafWrap: {
+    width: 88,
+    height: 74,
+    position: 'relative',
+    marginLeft: S.md,
+  },
+  leafLarge: {
+    position: 'absolute',
+    right: 4,
+    bottom: 8,
+    width: 58,
+    height: 34,
+    borderRadius: 24,
+    backgroundColor: '#D9F2E8',
+    transform: [{ rotate: '-22deg' }],
+  },
+  leafSmall: {
+    position: 'absolute',
+    right: 24,
+    bottom: 28,
+    width: 40,
+    height: 24,
+    borderRadius: 20,
+    backgroundColor: '#EAF9F2',
+    transform: [{ rotate: '-38deg' }],
+  },
+  leafDot: {
+    position: 'absolute',
+    right: 0,
+    top: 14,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#B9E7D3',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: S.sm,
+    marginBottom: S.md,
+    
+  },
+  filterTabs: {
+    flexDirection: 'row',
+    gap: S.sm,
+    marginBottom: S.md,
+  },
+  filterTabBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: C.bgSecondary,
+  },
+  filterTabBtnActive: {
+    backgroundColor: C.greenTint,
+  },
+  filterTabText: {
+    color: C.label3,
+    fontSize: F.xs,
+    fontWeight: F.semibold,
+  },
+  filterTabTextActive: {
+    color: C.greenDark,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: C.bg,
+    
+    borderRadius: R.lg,
+    padding: S.md,
+    ...shadow.sm,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: C.label4,
+    fontWeight: F.bold,
+    letterSpacing: 0.6,
+  },
+  statValue: {
+    marginTop: 2,
+    fontSize: F.xxl,
+    color: C.green,
+    fontWeight: F.black,
+    letterSpacing: -0.4,
+  },
+  statHint: {
+    marginTop: 2,
+    fontSize: F.xs,
+    color: C.label3,
+  },
+  latestCard: {
+    backgroundColor: C.bgSecondary,
+    borderRadius: R.xl,
+    padding: S.md,
+    marginBottom: S.sm,
+  },
+  latestHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: S.sm,
+  },
+  latestTitle: {
+    fontSize: F.lg,
+    fontWeight: F.bold,
+    color: C.label,
+  },
+  latestSubtitle: {
+    fontSize: F.xs,
+    color: C.label3,
+    marginTop: 2,
+  },
+  viewAllText: {
+    color: C.green,
+    fontSize: F.xs,
+    fontWeight: F.semibold,
+  },
+  viewAllBtn: {
+    paddingVertical: 4,
+  },
+  viewAllBtnPressed: {
+    opacity: 0.6,
+  },
+  viewAllBtnDisabled: {
+    opacity: 0.45,
+  },
+  latestPreview: {
+    borderRadius: R.lg,
+    overflow: 'hidden',
+    height: 148,
+    backgroundColor: C.fill,
+    position: 'relative',
+  },
+  latestPreviewPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+  latestImage: {
+    width: '100%',
+    height: '100%',
+  },
+  latestPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.fill,
+  },
+  latestPlaceholderText: {
+    color: C.label3,
+    fontSize: F.sm,
+  },
   fab: {
-    position: 'absolute', right: S.lg,
-    width: 56, height: 56, borderRadius: 28,
+    position: 'absolute',
+    right: S.xl,
+    height: 58,
+    borderRadius: 29,
+    paddingHorizontal: 10,
     backgroundColor: C.green,
-    alignItems: 'center', justifyContent: 'center',
-    ...shadow.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    elevation: 8,
   },
-  fabIcon: { color: '#fff', fontSize: 28, fontWeight: F.regular, lineHeight: 32 },
+  fabPlus: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  fabPlusText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: F.bold,
+    lineHeight: 26,
+  },
+  fabLabel: {
+    color: '#fff',
+    fontSize: F.md,
+    fontWeight: F.bold,
+    paddingRight: 8,
+  },
 });

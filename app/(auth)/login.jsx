@@ -5,7 +5,7 @@ import {
   Keyboard, TouchableWithoutFeedback, StatusBar,
 } from 'react-native';
 import Animated, {
-  useSharedValue, useAnimatedStyle, withTiming, withDelay, withSpring, Easing,
+  useSharedValue, useAnimatedStyle, withTiming, withDelay, withSpring,
 } from 'react-native-reanimated';
 import YinMascot from '../../components/YinMascot';
 import { useAuth } from '../../contexts/AuthContext';
@@ -47,8 +47,16 @@ export default function LoginScreen() {
   const passRef = useRef(null);
 
   /* staggered slide-up */
-  const op = [0,1,2,3].map(() => useSharedValue(0));
-  const ty = [0,1,2,3].map(() => useSharedValue(24));
+  const op0 = useSharedValue(0);
+  const op1 = useSharedValue(0);
+  const op2 = useSharedValue(0);
+  const op3 = useSharedValue(0);
+  const op = [op0, op1, op2, op3];
+  const ty0 = useSharedValue(24);
+  const ty1 = useSharedValue(24);
+  const ty2 = useSharedValue(24);
+  const ty3 = useSharedValue(24);
+  const ty = [ty0, ty1, ty2, ty3];
 
   useEffect(() => {
     op.forEach((v, i) => {
@@ -57,11 +65,24 @@ export default function LoginScreen() {
     ty.forEach((v, i) => {
       v.value = withDelay(i * 100 + 80, withSpring(0, { damping: 20, stiffness: 200 }));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run entrance animation once on mount
   }, []);
 
-  const aStyle = (i) => useAnimatedStyle(() => ({
-    opacity: op[i].value,
-    transform: [{ translateY: ty[i].value }],
+  const aStyle0 = useAnimatedStyle(() => ({
+    opacity: op0.value,
+    transform: [{ translateY: ty0.value }],
+  }));
+  const aStyle1 = useAnimatedStyle(() => ({
+    opacity: op1.value,
+    transform: [{ translateY: ty1.value }],
+  }));
+  const aStyle2 = useAnimatedStyle(() => ({
+    opacity: op2.value,
+    transform: [{ translateY: ty2.value }],
+  }));
+  const aStyle3 = useAnimatedStyle(() => ({
+    opacity: op3.value,
+    transform: [{ translateY: ty3.value }],
   }));
 
   const handleAuth = async () => {
@@ -82,7 +103,7 @@ export default function LoginScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.kav}>
 
           {/* ── Top: mascot + wordmark ── */}
-          <AView style={[styles.hero, aStyle(0)]}>
+          <AView style={[styles.hero, aStyle0]}>
             <YinMascot size={90} />
             <View style={styles.wordmark}>
               <Text style={styles.appName}>Yin</Text>
@@ -91,7 +112,7 @@ export default function LoginScreen() {
           </AView>
 
           {/* ── Form card ── */}
-          <AView style={[styles.formCard, aStyle(1)]}>
+          <AView style={[styles.formCard, aStyle1]}>
             <Text style={styles.formHeading}>
               {isSignUp ? 'Create account' : 'Sign in'}
             </Text>
@@ -120,7 +141,7 @@ export default function LoginScreen() {
           </AView>
 
           {/* ── Primary button ── */}
-          <AView style={[aStyle(2)]}>
+          <AView style={[aStyle2]}>
             <Pressable
               style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed, loading && styles.primaryBtnLoading]}
               onPress={handleAuth}
@@ -134,7 +155,7 @@ export default function LoginScreen() {
           </AView>
 
           {/* ── Toggle ── */}
-          <AView style={[styles.toggleWrap, aStyle(3)]}>
+          <AView style={[styles.toggleWrap, aStyle3]}>
             <Pressable onPress={() => setIsSignUp(v => !v)}>
               <Text style={styles.toggleText}>
                 {isSignUp ? 'Already have an account?  ' : "Don't have an account?  "}

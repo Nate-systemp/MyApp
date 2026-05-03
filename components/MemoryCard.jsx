@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, Pressable, Dimensions, Image } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withSequence } from 'react-native-reanimated';
-import { C, F, R, S, shadow } from '../constants/Yin';
+import { C, F, R, S } from '../constants/Yin';
 
 const { width: W } = Dimensions.get('window');
 const GRID_GAP = 12;
@@ -108,18 +108,6 @@ export default function MemoryCard({ item, onPress, onLike, featured = false }) 
   );
 }
 
-/* ── Heart icon via pure View (no emoji, no gradient) ── */
-const HEART = 14;
-const heartStyle = {
-  width: HEART,
-  height: HEART,
-  backgroundColor: C.label4,
-  transform: [{ rotate: '-45deg' }],
-  borderTopLeftRadius: HEART / 2,
-  borderTopRightRadius: HEART / 2,
-  borderBottomRightRadius: HEART / 2,
-};
-
 const styles = StyleSheet.create({
   /* ── featured ── */
   featured: {
@@ -130,7 +118,11 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.sep,
-    ...shadow.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.09,
+    shadowRadius: 8,
+    elevation: 4,
   },
   featuredImgWrap: {
     width: '100%',
@@ -175,7 +167,11 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.sep,
-    ...shadow.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cardImgWrap: {
     width: CARD_W,

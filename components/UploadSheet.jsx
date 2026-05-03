@@ -1,7 +1,7 @@
 import React, { forwardRef, useCallback, useMemo, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator,
-  Alert, Keyboard, TouchableWithoutFeedback, StatusBar, Image,
+  Alert, Keyboard, TouchableWithoutFeedback, Image,
 } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import * as ImagePicker from 'expo-image-picker';
@@ -9,7 +9,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-na
 import { supabase } from '../supabase';
 import { useAuth } from '../contexts/AuthContext';
 import YinMascot from './YinMascot';
-import { C, F, R, S, shadow } from '../constants/Yin';
+import { C, F, R, S } from '../constants/Yin';
 
 const AView = Animated.createAnimatedComponent(View);
 
@@ -199,6 +199,8 @@ const UploadSheet = forwardRef(({ onUploaded }, ref) => {
     </BottomSheet>
   );
 });
+
+UploadSheet.displayName = 'UploadSheet';
 
 export default UploadSheet;
 

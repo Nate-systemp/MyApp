@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
-import Svg, { Path, Circle, Ellipse, G, Rect, Polygon } from 'react-native-svg';
+import { View } from 'react-native';
+import Svg, { Path, Circle, Ellipse, Polygon } from 'react-native-svg';
 import Animated, {
   useSharedValue, useAnimatedStyle,
   withRepeat, withSequence, withTiming, withSpring, Easing,
@@ -30,6 +30,7 @@ export default function YinMascot({ size = 100, spinning = false }) {
       ),
       -1, true,
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- float loop uses shared value only
   }, []);
 
   // Happy spin on upload success
@@ -42,6 +43,7 @@ export default function YinMascot({ size = 100, spinning = false }) {
         withSpring(1, { damping: 8 }),
       );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run when spinning toggles; reads/writes shared values
   }, [spinning]);
 
   const aStyle = useAnimatedStyle(() => ({
